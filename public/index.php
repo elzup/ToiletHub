@@ -13,6 +13,11 @@ require __DIR__ . '/../vendor/autoload.php';
 
 session_start();
 
+ORM::configure('pgsql:host='.OSM_DB.';dbname=skime', null, 'osmdata');
+ORM::configure('pgsql:host=192.168.99.100;dbname=toilethub_db');
+ORM::configure('username', 'elzup');
+ORM::configure('password', 'password');
+
 // Instantiate the app
 $settings = require __DIR__ . '/../src/settings.php';
 $app = new \Slim\App($settings);
