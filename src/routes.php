@@ -1,12 +1,10 @@
 <?php
 // Routes
+define('Q_SELECT_TOILET', 'id, name, type, ST_X(ST_TRANSFORM(position, 4612)) AS long, ST_Y(ST_TRANSFORM(position, 4612)) AS lat');
 
 $app->get('/toilets/{id}', function ($request, $response, $args) {
-    $toilets = ORM::for_table('toilets')
-        ->raw_query('select id, name, type,
-ST_X(ST_TRANSFORM(position, 4612)) AS long,
-ST_Y(ST_TRANSFORM(position, 4612)) AS lat
-from toilets where id = ' . intval($args['id']))->find_array();
+    $query = 'select ' . Q_SELECT_TOILET .' from toilets where id = ' . intval($args['id']);
+    $toilets = ORM::for_table('toilets')->raw_query($query)->find_array();
     $body = $response->getBody();
     $body->write(json_encode($toilets[0]));
     return $response->withHeader('Content-Type', 'application/json')->withBody($body);
@@ -25,9 +23,50 @@ $app->post('/users/register', function ($request, $response, $args) {
 });
 
 $app->get('/toilets/search/', function ($request, $response, $args) {
-    $query = 'select id, name, type, ST_X(ST_TRANSFORM(position, 4612)) AS long, ST_Y(ST_TRANSFORM(position, 4612)) AS lat
-from toilets order by ST_Distance( position,
+    $query = 'select ' . Q_SELECT_TOILET . ' from toilets order by ST_Distance( position,
         ST_GeomFromText(\'POINT(' . floatval($request->getParam('long')) . ' ' . floatval($request->getParam('lat')) . ')\', 4612)) limit 10;';
+    $toilets = ORM::for_table('toilets')->raw_query($query)->find_array();
+    $body = $response->getBody();
+    $body->write(json_encode($toilets));
+    return $response->withHeader('Content-Type', 'application/json')->withBody($body);
+});
+
+$app->get('/reviews/{id}', function ($request, $response, $args) {
+    $reviews = ORM::for_table('reviews')->where_equal('id', $args['id'])->find_array();
+    $body = $response->getBody();
+    $body->write(json_encode($reviews[0]));
+    return $response->withHeader('Content-Type', 'application/json')->withBody($body);
+});
+
+$app->get('/reviews/', function ($request, $response, $args) {
+    $reviews = ORM::for_table('reviews')->where_equal('toilet_id', $request->getParam('toilet_id'))->find_array();
+    $body = $response->getBody();
+    $body->write(json_encode($reviews));
+    return $response->withHeader('Content-Type', 'application/json')->withBody($body);
+});
+
+$app->get('/toilets/ranking/', function ($request, $response, $args) {
+    $where_list = array();
+    if ($request->getParam('is_man')) {
+        $where_list[] = 'is_man=' . $request->getParam('is_man');
+    }
+    if ($request->getParam('age')) {
+        $where_list[] = 'age=' . $request->getParam('age');
+    }
+    if ($request->getParam('has_child')) {
+        $where_list[] = 'has_child=' . $request->getParam('has_child');
+    }
+    $where = '';
+    if (!empty($where_list)) {
+        $where = ' where ' . implode(' and ', $where_list);
+    }
+    $query = 'select ' . Q_SELECT_TOILET . ' from toilets as T1
+inner join (
+    select toilet_id as tid, avg(rate) as rate_avg from reviews where user_id in (
+        select T3.id from users as T3 ' . $where . '
+    ) group by toilet_id
+) as T2 on T1.id = T2.tid
+order by rate_avg DESC;';
     $toilets = ORM::for_table('toilets')->raw_query($query)->find_array();
     $body = $response->getBody();
     $body->write(json_encode($toilets));
