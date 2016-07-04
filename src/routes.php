@@ -1,12 +1,37 @@
 <?php
 // Routes
 
-$app->get('/', function ($request, $response, $args) {
-    // Sample log message
-    $this->logger->info("Slim-Skeleton '/' route");
+$app->get('/toilets/{id}', function ($request, $response, $args) {
+    $toilets = ORM::for_table('toilets')
+        ->raw_query('select id, name, type,
+ST_X(ST_TRANSFORM(position, 4612)) AS long,
+ST_Y(ST_TRANSFORM(position, 4612)) AS lat
+from toilets where id = ' . intval($args['id']))->find_array();
+    $body = $response->getBody();
+    $body->write(json_encode($toilets[0]));
+    return $response->withHeader('Content-Type', 'application/json')->withBody($body);
+});
 
-    // Render index view
-    return $this->renderer->render($response, 'index.phtml', $args);
+$app->post('/users/register', function ($request, $response, $args) {
+    $in = array(
+        'is_man' => $request->getParam('is_man'),
+        'age' => intval(intval($request->getParam('age')) / 10) * 10,
+        'has_child' => $request->getParam('has_child'));
+    $user = ORM::for_table('users')->create($in);
+    $user->save();
+    $body = $response->getBody();
+    $body->write(json_encode($user));
+    return $response->withHeader('Content-Type', 'application/json')->withBody($body);
+});
+
+$app->get('/toilets/search/', function ($request, $response, $args) {
+    $query = 'select id, name, type, ST_X(ST_TRANSFORM(position, 4612)) AS long, ST_Y(ST_TRANSFORM(position, 4612)) AS lat
+from toilets order by ST_Distance( position,
+        ST_GeomFromText(\'POINT(' . floatval($request->getParam('long')) . ' ' . floatval($request->getParam('lat')) . ')\', 4612)) limit 10;';
+    $toilets = ORM::for_table('toilets')->raw_query($query)->find_array();
+    $body = $response->getBody();
+    $body->write(json_encode($toilets));
+    return $response->withHeader('Content-Type', 'application/json')->withBody($body);
 });
 
 $app->get('/seed', function ($request, $response, $args) {
@@ -42,7 +67,7 @@ $app->get('/seed', function ($request, $response, $args) {
         $lat = 35.748558 + ((mt_rand() / mt_getrandmax()) - 0.5) * 0.02;
         $long = 139.806355 + ((mt_rand() / mt_getrandmax()) - 0.5) * 0.02;
         $pos = "ST_GeomFromText('POINT($long $lat)', 4612)";
-        $in_query = "('トイレ$i', $rand_type, $pos)";
+        $in_query = "('トイレ{$i}', $rand_type, $pos)";
         // ex: insert into toilets (name, type, position) values ('トイレ9999', 2, ST_GeomFromText('POINT(-71.060316 48.432044)', 4612));
 
         // create 20 toilets
