@@ -14,7 +14,9 @@ $app->get('/toilets/{id}', function ($request, $response, $args) {
 
 function wrap_toilet(&$toilet) {
     $toilet['options'] = ORM::for_table('options')->where_equal('toilet_id', $toilet['id'])->find_array();
-    $toilet['reviews'] = ORM::for_table('reviews')->where_equal('toilet_id', $toilet['id'])->find_array();
+    $reviews = ORM::for_table('reviews')->where_equal('toilet_id', $toilet['id'])->find_array();
+    wrap_reviews($reviews);
+    $toilet['reviews'] = $reviews;
 }
 
 function wrap_toilets(&$toilets) {
@@ -22,6 +24,7 @@ function wrap_toilets(&$toilets) {
     $ids_in = '(' . implode(',', $ids). ')';
     $options = ORM::for_table('options')->raw_query("select * from options where toilet_id in {$ids_in};")->find_array();
     $reviews = ORM::for_table('reviews')->raw_query("select * from reviews where toilet_id in {$ids_in};")->find_array();
+    wrap_reviews($reviews);
     $toilets_map = array();
     foreach ($options as $option) {
         @$toilets_map[$option['toilet_id']][0][] = $option;
@@ -32,6 +35,37 @@ function wrap_toilets(&$toilets) {
     foreach ($toilets as &$toilet) {
         $toilet['options'] = $toilets_map[$toilet['id']][0];
         $toilet['reviews'] = $toilets_map[$toilet['id']][1];
+    }
+}
+
+function wrap_review(&$review) {
+    $review['owner'] = ORM::for_table('users')->where_equal('id', $review['user_id'])->find_array();
+    $review['toilet'] = ORM::for_table('toilets')->where_equal('id', $review['toilet_id'])->find_array();
+}
+
+function wrap_reviews(&$reviews, $inc_tolet = false) {
+    $user_ids = array_map(function($e) { return $e['user_id']; }, $reviews);
+    $user_ids_in = '(' . implode(',', $user_ids). ')';
+    $users = ORM::for_table('users')->raw_query("select * from users where id in {$user_ids_in};")->find_array();
+    $map = array();
+    foreach ($users as $user) {
+        @$map[0][$user['id']] = $user;
+    }
+    foreach ($reviews as &$review) {
+        $review['owner'] = $map[0][intval($review['user_id'])];
+    }
+    if ($inc_tolet) {
+        $toilet_ids = array_map(function ($e) {
+            return $e['toilet_id'];
+        }, $reviews);
+        $toilet_ids_in = '(' . implode(',', $toilet_ids) . ')';
+        $toilets = ORM::for_table('toilets')->raw_query("select " . Q_SELECT_TOILET . " from toilets where id in {$toilet_ids_in};")->find_array();
+        foreach ($toilets as $toilet) {
+            @$map[1][$toilet['id']] = $toilet;
+        }
+        foreach ($reviews as &$review) {
+            $review['toilet'] = $map[1][intval($review['toilet_id'])];
+        }
     }
 }
 
@@ -59,13 +93,16 @@ $app->get('/toilets/search/', function ($request, $response, $args) {
 
 $app->get('/reviews/{id}', function ($request, $response, $args) {
     $reviews = ORM::for_table('reviews')->where_equal('id', $args['id'])->find_array();
+    $review = $reviews[0];
+    wrap_review($review);
     $body = $response->getBody();
-    $body->write(json_encode($reviews[0]));
+    $body->write(json_encode($review));
     return $response->withHeader('Content-Type', 'application/json')->withBody($body);
 });
 
 $app->get('/reviews/', function ($request, $response, $args) {
     $reviews = ORM::for_table('reviews')->where_equal('toilet_id', $request->getParam('toilet_id'))->find_array();
+    wrap_reviews($reviews, true);
     $body = $response->getBody();
     $body->write(json_encode($reviews));
     return $response->withHeader('Content-Type', 'application/json')->withBody($body);
@@ -86,7 +123,7 @@ $app->get('/toilets/ranking/', function ($request, $response, $args) {
     if (!empty($where_list)) {
         $where = ' where ' . implode(' and ', $where_list);
     }
-    $query = 'select ' . Q_SELECT_TOILET . ' from toilets as T1
+    $query = 'select ' . Q_SELECT_TOILET . ', rate_avg from toilets as T1
 inner join (
     select toilet_id as tid, avg(rate) as rate_avg from reviews where user_id in (
         select T3.id from users as T3 ' . $where . '
@@ -95,6 +132,7 @@ inner join (
 order by rate_avg DESC;';
     $toilets = ORM::for_table('toilets')->raw_query($query)->find_array();
     $body = $response->getBody();
+    wrap_toilets($toilets);
     $body->write(json_encode($toilets));
     return $response->withHeader('Content-Type', 'application/json')->withBody($body);
 });
