@@ -33,8 +33,8 @@ function wrap_toilets(&$toilets) {
         @$toilets_map[$review['toilet_id']][1][] = $review;
     }
     foreach ($toilets as &$toilet) {
-        $toilet['options'] = $toilets_map[$toilet['id']][0];
-        $toilet['reviews'] = $toilets_map[$toilet['id']][1];
+        $toilet['options'] = $toilets_map[$toilet['id']][0] ?? [];
+        $toilet['reviews'] = $toilets_map[$toilet['id']][1] ?? [];
     }
 }
 
@@ -77,7 +77,7 @@ $app->post('/users/register', function ($request, $response, $args) {
     $user = ORM::for_table('users')->create($in);
     $user->save();
     $body = $response->getBody();
-    $body->write(json_encode($user));
+    $body->write(json_encode($user->as_array()));
     return $response->withHeader('Content-Type', 'application/json')->withBody($body);
 });
 
