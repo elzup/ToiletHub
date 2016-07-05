@@ -5,10 +5,35 @@ define('Q_SELECT_TOILET', 'id, name, type, ST_X(ST_TRANSFORM(position, 4612)) AS
 $app->get('/toilets/{id}', function ($request, $response, $args) {
     $query = 'select ' . Q_SELECT_TOILET .' from toilets where id = ' . intval($args['id']);
     $toilets = ORM::for_table('toilets')->raw_query($query)->find_array();
+    $toilet = $toilets[0];
+    wrap_toilet($toilet);
     $body = $response->getBody();
-    $body->write(json_encode($toilets[0]));
+    $body->write(json_encode($toilet));
     return $response->withHeader('Content-Type', 'application/json')->withBody($body);
 });
+
+function wrap_toilet(&$toilet) {
+    $toilet['options'] = ORM::for_table('options')->where_equal('toilet_id', $toilet['id'])->find_array();
+    $toilet['reviews'] = ORM::for_table('reviews')->where_equal('toilet_id', $toilet['id'])->find_array();
+}
+
+function wrap_toilets(&$toilets) {
+    $ids = array_map(function($e) { return $e['id']; }, $toilets);
+    $ids_in = '(' . implode(',', $ids). ')';
+    $options = ORM::for_table('options')->raw_query("select * from options where toilet_id in {$ids_in};")->find_array();
+    $reviews = ORM::for_table('reviews')->raw_query("select * from reviews where toilet_id in {$ids_in};")->find_array();
+    $toilets_map = array();
+    foreach ($options as $option) {
+        @$toilets_map[$option['toilet_id']][0][] = $option;
+    }
+    foreach ($reviews as $review) {
+        @$toilets_map[$review['toilet_id']][1][] = $review;
+    }
+    foreach ($toilets as &$toilet) {
+        $toilet['options'] = $toilets_map[$toilet['id']][0];
+        $toilet['reviews'] = $toilets_map[$toilet['id']][1];
+    }
+}
 
 $app->post('/users/register', function ($request, $response, $args) {
     $in = array(
@@ -27,6 +52,7 @@ $app->get('/toilets/search/', function ($request, $response, $args) {
         ST_GeomFromText(\'POINT(' . floatval($request->getParam('long')) . ' ' . floatval($request->getParam('lat')) . ')\', 4612)) limit 10;';
     $toilets = ORM::for_table('toilets')->raw_query($query)->find_array();
     $body = $response->getBody();
+    wrap_toilets($toilets);
     $body->write(json_encode($toilets));
     return $response->withHeader('Content-Type', 'application/json')->withBody($body);
 });
@@ -111,9 +137,11 @@ $app->get('/seed', function ($request, $response, $args) {
 
         // create 20 toilets
         ORM::raw_execute("$insert_query_head $in_query;");
-        $k = rand(0, 8);
+        $k = rand(0, 6);
+        echo $k . " ";
         for ($j = 0; $j < 3; $j++) {
-            if (($k >> $j && 1) == 0) {
+            echo (($k >> $j) & 1) == 1 ? "+" : "-";
+            if ((($k >> $j) & 1) == 0) {
                 continue;
             }
             $in_query = "($i, '{$option_names[$j]}', '備考 $i')";
@@ -121,6 +149,7 @@ $app->get('/seed', function ($request, $response, $args) {
             // ORM::for_table('options')->create($in)->save();
             ORM::raw_execute("$insert_options_query_head $in_query");
         }
+        echo "\n";
     }
 
     // create 20 * 10 reviews
